@@ -1,0 +1,10 @@
+[package]
+name = "tdu_gravity_patcher"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+iced = "0.9"
+checksums = "0.7.1"
