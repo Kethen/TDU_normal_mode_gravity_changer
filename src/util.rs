@@ -33,9 +33,12 @@ pub fn identify_file(file_content:&std::vec::Vec<u8>) -> Result<usize, &'static 
 	Err("file did not match any of the checksums")
 }
 
-pub fn read_current_gravity(file_content:&std::vec::Vec<u8>, offset:usize) -> f32{
+pub fn read_current_gravity(file_content:&std::vec::Vec<u8>, offset:usize) -> Result<f32, &'static str>{
+	if file_content.len() <= (offset + 4) {
+		return Err("file smaller than offset ");
+	}	
 	let to_float:[u8; 4] = [file_content[offset], file_content[offset+1], file_content[offset+2], file_content[offset+3]];
-	return f32::from_le_bytes(to_float);
+	return Ok(f32::from_le_bytes(to_float));
 }
 
 pub fn change_gravity(file_content:&mut std::vec::Vec<u8>, offset:usize, gravity:f32) -> Result<(), &'static str>{
