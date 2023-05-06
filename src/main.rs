@@ -5,7 +5,7 @@ use iced::{Alignment, Element, Sandbox, Settings};
 
 use rfd::FileDialog;
 
-fn get_gravity_from_file(path:&String) -> Result<f32, String>{
+fn get_information_from_file(path:&String) -> Result<(f32, util::FileParams), String>{
 	let file_path = std::path::Path::new(&path);
 	if file_path.is_file() != true{
 		return Err(format!("file {} not found", path));
@@ -16,13 +16,13 @@ fn get_gravity_from_file(path:&String) -> Result<f32, String>{
 		Err(e) => {return Err(format!("cannot open {}: {}", path, e))}
 	};
 	
-	let offset = match util::identify_file(&file_content){
-		Ok(offset) => offset,
+	let file_params = match util::identify_file(&file_content){
+		Ok(params) => params,
 		Err(e) => {return Err(format!("failed identifying exe: {}", e))},
 	};
 	
-	match util::read_current_gravity(&file_content, offset){
-		Ok(gravity) => Ok(gravity),
+	match util::read_current_gravity(&file_content, &file_params){
+		Ok(gravity) => Ok((gravity, file_params)),
 		Err(e) => Err(format!("failed retriving gravity from file: {}", e)),
 	}
 }
@@ -55,12 +55,12 @@ fn patch_file(path:&std::path::Path, gravity:f32) -> Result<(), String>{
 		};
 	}
 
-	let offset = match util::identify_file(&file_content){
-		Ok(offset) => offset,
+	let file_params = match util::identify_file(&file_content){
+		Ok(params) => params,
 		Err(e) => {return Err(format!("failed identifying exe: {}", e))},
 	};
 
-	match util::change_gravity(&mut file_content, offset, gravity){
+	match util::change_gravity(&mut file_content, &file_params, gravity){
 		Ok(_) => (),
 		Err(e) => {return Err(format!("failed changing gravity: {}", e))},
 	};
@@ -75,6 +75,8 @@ struct UserInterface {
 	path:String,
 	log:String,
 	gravity:String,
+	file_name:String,
+	file_recognized:bool,
 }
 
 #[derive(Debug, Clone)]
@@ -91,7 +93,9 @@ impl Sandbox for UserInterface {
 		Self {
 			path: String::from(""),
 			log: String::from(""),
-			gravity: String::from("0.0"),
+			gravity: String::from("1.0"),
+			file_name: String::from(""),
+			file_recognized: false,
 		}
 	}
 
@@ -105,9 +109,16 @@ impl Sandbox for UserInterface {
 				match pick_file(){
 					Ok(path) => {
 						self.path = format!("{}", path.display());
-						match get_gravity_from_file(&self.path){
-							Ok(g) => {self.gravity = format!("{:.1}", g)},
-							Err(_) => (),
+						match get_information_from_file(&self.path){
+							Ok((g, p)) => {
+								self.gravity = format!("{:.1}", g);
+								self.file_name = p.name.to_string();
+								self.file_recognized = true;
+							},
+							Err(_) => {
+								self.file_name = String::from("");
+								self.file_recognized = false;
+							},
 						};
 					},
 					Err(e) => {
@@ -161,11 +172,22 @@ impl Sandbox for UserInterface {
 				button("...").on_press(Message::FilePicker),
 			],
 			row![
+				if self.file_recognized{
+					text(format!("File recognized as {}", self.file_name))
+				}else{
+					if self.path.len() == 0{
+						text("No file selected yet")
+					}else{
+						text("File not recognized")
+					}
+				},
+			].align_items(Alignment::Start),
+			row![
 				text("Gravity: "),
 				text_input("Floating point gravity value", &self.gravity.to_string()).on_input(|a|Message::ChangeGravity(a)),
-			].align_items(Alignment::Start),			
+			].align_items(Alignment::Start),
 			row![
-				if gravity_is_float && std::path::Path::new(&self.path).is_file(){
+				if gravity_is_float && self.file_recognized {
 					button("Patch").on_press(Message::Patch)
 				}else{
 					button("Patch")					
