@@ -21,7 +21,17 @@ pub fn identify_file(file_content:&std::vec::Vec<u8>) -> Result<FileParams, &'st
 			// -9.81 le f32
 			havok_original_bytes: [0xC3, 0xF5, 0x1C, 0xC1],
 			name: "1.66a",
-		}
+		},
+		FileParams {
+			check_sum: "F452AFCDACC3D69858EA8188BEFD4764B0994C72120892D78A7CAC98C77DE6ED",
+			normal_mode_offset: 0x5E2710,
+			// mov ecx,dword ptr ds:[F8A21C]
+			normal_mode_original_bytes: [0x8B, 0x0D, 0x1C, 0xA2, 0xF8, 0x00],
+			havok_offset: 0xB41CC4,
+			// -9.81 le f32
+			havok_original_bytes: [0xC3, 0xF5, 0x1C, 0xC1],
+			name: "1.66a platinum",
+		},
 	];
 
 	for file_params in recognized_files.iter() {
