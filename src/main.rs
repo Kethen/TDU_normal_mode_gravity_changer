@@ -36,7 +36,7 @@ fn log_to_file<S:AsRef<str>>(message:S){
 	};
 }
 
-fn get_information_from_file(path:&String) -> Result<(f32, util::FileParams), String>{
+fn get_information_from_file(path:&String) -> Result<((f32, f32), util::FileParams), String>{
 	let file_path = std::path::Path::new(&path);
 	if file_path.is_file() != true{
 		return Err(format!("file {} not found", path));
@@ -71,7 +71,7 @@ fn pick_file() -> Result<std::path::PathBuf, &'static str>{
 	}
 }
 
-fn patch_file(path:&std::path::Path, gravity:f32) -> Result<(), String>{
+fn patch_file(path:&std::path::Path, gravity:(f32,f32)) -> Result<(), String>{
 	let mut file_content = match std::fs::read(&path){
 		Ok(content) => content,
 		Err(e) => {return Err(format!("cannot open {}: {}", path.display(), e))}
@@ -105,7 +105,8 @@ fn patch_file(path:&std::path::Path, gravity:f32) -> Result<(), String>{
 struct UserInterface {
 	path:String,
 	log_display:String,
-	gravity:String,
+	havok_gravity:String,
+	normal_mode_gravity_modifier:String,
 	file_name:String,
 	file_recognized:bool,
 }
@@ -122,11 +123,22 @@ impl SandboxWithLog for UserInterface {
 	}
 }
 
+fn format_f32(value:f32, min_precision:usize) -> String{
+	let base = format!("{}", value);
+	for c in base.chars(){
+		if c == '.'{
+			return base;
+		}
+	}
+	return format!("{}.{}", base, "0".repeat(min_precision))
+}
+
 #[derive(Debug, Clone)]
 enum Message {
 	FilePicker,
 	Patch,
 	ChangeGravity(String),
+	ChangeNormalModeGravityModifier(String),
 	Ignore,
 	CopyLogToClipboard,
 }
@@ -137,14 +149,15 @@ impl Sandbox for UserInterface {
 		Self {
 			path: String::from(""),
 			log_display: String::from(""),
-			gravity: String::from("1.0"),
+			normal_mode_gravity_modifier: String::from("1.0"),
+			havok_gravity: String::from("-9.81"),
 			file_name: String::from(""),
 			file_recognized: false,
 		}
 	}
 
 	fn title(&self) -> String {
-		String::from("Test Drive Unlimited Normal Mode Gravity Patcher")
+		String::from("Test Drive Unlimited Gravity Patcher")
 	}
 
 	fn update(&mut self, message: Message){
@@ -155,7 +168,9 @@ impl Sandbox for UserInterface {
 						self.path = format!("{}", path.display());
 						match get_information_from_file(&self.path){
 							Ok((g, p)) => {
-								self.gravity = format!("{:.1}", g);
+								let (normal_mode_gravity_modifier, havok_gravity) = g;
+								self.normal_mode_gravity_modifier = format_f32(normal_mode_gravity_modifier, 1);
+								self.havok_gravity = format_f32(havok_gravity, 2);
 								self.file_name = p.name.to_string();
 								self.file_recognized = true;
 							},
@@ -171,14 +186,21 @@ impl Sandbox for UserInterface {
 				}
 			},
 			Message::Patch => {
-				let gravity_float = match self.gravity.parse::<f32>() {
+				let havok_gravity_float = match self.havok_gravity.parse::<f32>() {
 					Ok(float) => float,
 					Err(_) => {
-						self.log(format!("failed patching {}:\n{} is not a float value", self.path, self.gravity));
+						self.log(format!("failed patching {}:\n{} is not a float value", self.path, self.havok_gravity));
 						return;
 					}
 				};
-				match patch_file(&std::path::Path::new(&self.path), gravity_float){
+				let normal_mode_gravity_modifier_float = match self.normal_mode_gravity_modifier.parse::<f32>() {
+					Ok(float) => float,
+					Err(_) => {
+						self.log(format!("failed patching {}:\n{} is not a float value", self.path, self.normal_mode_gravity_modifier));
+						return;
+					}
+				};
+				match patch_file(&std::path::Path::new(&self.path), (normal_mode_gravity_modifier_float, havok_gravity_float)){
 					Ok(_) => {
 						self.log(format!( "successfully patched {}", self.path));
 					},
@@ -188,7 +210,10 @@ impl Sandbox for UserInterface {
 				};
 			},
 			Message::ChangeGravity(g) => {
-				self.gravity = g;
+				self.havok_gravity = g;
+			},
+			Message::ChangeNormalModeGravityModifier(g) => {
+				self.normal_mode_gravity_modifier = g;
 			},
 			Message::Ignore => {();},
 			Message::CopyLogToClipboard => {
@@ -200,20 +225,26 @@ impl Sandbox for UserInterface {
 	}
 
 	fn view(&self) -> Element<Message>{
-		let gravity_is_float = match self.gravity.parse::<f32>(){
-			Ok(_) => true,
-			Err(_) => false
-		};
+		let mut gravities_are_float =
+			match self.normal_mode_gravity_modifier.parse::<f32>(){
+				Ok(_) => true,
+				Err(_) => false,
+			}
+		&&
+			match self.havok_gravity.parse::<f32>(){
+				Ok(_) => true,
+				Err(_) => false,
+			};
 		column![
 			column![
 				row![
 					text(format!(
 						"{}\n{}\n{}\n{}\n{}",
-						"Select your TestDriveUnlimited.exe, set a floating point gravity coefficient value then click Patch.",
-						"This gravity value is only applied when a wheel is lifted off the ground.",
-						"0.0 should remove any extra downforce, running up a ramp at 200 kph will get quite some air time.",
-						"1.0 is the default value.",
-						"Negative values that overcomes the game's gravity like -10.0 will send the vehicle flying upward on curbs and jumps.",
+						"Select your TestDriveUnlimited.exe, then set normal mode gravity modifier and overall gravity (y axis, down is negative) then click Patch.",
+						"The modifier is only applied when a wheel is lifted off the ground in normal mode, the overall gravity is used everywhere.",
+						"A 0.0 modifier should remove any extra downforce in normal mode, running up a ramp at 200 kph will get quite some air time.",
+						"1.0 is the default modifier, -9.81 is the default gravity.",
+						"Negative modifiers or positive gravity will send the vehicle flying upward.",
 					)).width(Length::Fill),
 				],
 				row![
@@ -234,8 +265,10 @@ impl Sandbox for UserInterface {
 				].align_items(Alignment::Center),
 				row![
 					text("Gravity: "),
-					text_input("Floating point gravity value", &self.gravity.to_string()).on_input(|a|Message::ChangeGravity(a)),
-					if gravity_is_float && self.file_recognized {
+					text_input("Floating point gravity value", &self.havok_gravity).on_input(|a|Message::ChangeGravity(a)),
+					text("Normal Mode Gravity Modifier: "),
+					text_input("Floating point gravity modifier value", &self.normal_mode_gravity_modifier).on_input(|a|Message::ChangeNormalModeGravityModifier(a)),
+					if gravities_are_float && self.file_recognized {
 						button("Patch").on_press(Message::Patch)
 					}else{
 						button("Patch")
@@ -275,7 +308,7 @@ impl Sandbox for UserInterface {
 
 fn gui(){
 	let mut settings = Settings::default();
-	settings.window.size = (800, 400);
+	settings.window.size = (800, 440);
 	settings.window.resizable = false;
 	UserInterface::run(settings);
 }
@@ -286,7 +319,7 @@ fn simple(){
 		Err(e) => panic!("{}", e),
 	};
 
-	match patch_file(&path, 0.2){
+	match patch_file(&path, (0.2, -9.81)){
 		Ok(_) => {println!("success")},
 		Err(e) => panic!("{}", e),
 	};
