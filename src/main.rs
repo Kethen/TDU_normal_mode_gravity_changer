@@ -2,7 +2,7 @@ mod util;
 
 use std::io::Write;
 
-use iced::widget::{button, row, column, text, text_input, scrollable};
+use iced::widget::{button, row, column, text, text_input, scrollable, checkbox};
 use iced::{Alignment, Element, Sandbox, Settings};
 use iced::clipboard;
 use iced::Length;
@@ -36,7 +36,7 @@ fn log_to_file<S:AsRef<str>>(message:S){
 	};
 }
 
-fn get_information_from_file(path:&String) -> Result<((f32, f32), util::FileParams), String>{
+fn get_information_from_file(path:&String) -> Result<((f32, f32), bool, util::FileParams), String>{
 	let file_path = std::path::Path::new(&path);
 	if file_path.is_file() != true{
 		return Err(format!("file {} not found", path));
@@ -51,11 +51,18 @@ fn get_information_from_file(path:&String) -> Result<((f32, f32), util::FilePara
 		Ok(params) => params,
 		Err(e) => {return Err(format!("failed identifying exe: {}", e))},
 	};
-	
-	match util::read_current_gravity(&file_content, &file_params){
-		Ok(gravity) => Ok((gravity, file_params)),
-		Err(e) => Err(format!("failed retriving gravity from file: {}", e)),
-	}
+
+	let gravity = match util::read_current_gravity(&file_content, &file_params){
+		Ok(g) => g,
+		Err(e) => {return Err(format!("failed retriving gravity from file: {}", e))},
+	};
+
+	let hc_physics_is_forced = match util::hc_mode_physics_is_forced(&file_content, &file_params){
+		Ok(b) => b,
+		Err(e) => {return Err(format!("failed checking if hc mode physics is forced: {}", e))},
+	};
+
+	return Ok((gravity, hc_physics_is_forced, file_params));
 }
 
 fn pick_file() -> Result<std::path::PathBuf, &'static str>{
@@ -71,7 +78,7 @@ fn pick_file() -> Result<std::path::PathBuf, &'static str>{
 	}
 }
 
-fn patch_file(path:&std::path::Path, gravity:(f32,f32)) -> Result<(), String>{
+fn patch_file(path:&std::path::Path, gravity:(f32,f32), force_hc_mode_physics_on_normal:bool) -> Result<(), String>{
 	let mut file_content = match std::fs::read(&path){
 		Ok(content) => content,
 		Err(e) => {return Err(format!("cannot open {}: {}", path.display(), e))}
@@ -96,6 +103,11 @@ fn patch_file(path:&std::path::Path, gravity:(f32,f32)) -> Result<(), String>{
 		Err(e) => {return Err(format!("failed changing gravity: {}", e))},
 	};
 
+	match util::toggle_force_hc_mode_physics(&mut file_content, &file_params, force_hc_mode_physics_on_normal){
+		Ok(_) => (),
+		Err(e) => {return Err(format!("failed toggling force hc mode physics: {}", e))},
+	};
+
 	match std::fs::write(&path, file_content){
 		Ok(_) => {return Ok(())},
 		Err(e) => {return Err(format!("failed writing patched file to {}: {}", path.display(), e))},
@@ -109,6 +121,7 @@ struct UserInterface {
 	normal_mode_gravity_modifier:String,
 	file_name:String,
 	file_recognized:bool,
+	force_hc_mode_physics_on_normal:bool,
 }
 
 trait SandboxWithLog {
@@ -140,6 +153,7 @@ enum Message {
 	ChangeGravity(String),
 	ChangeNormalModeGravityModifier(String),
 	Ignore,
+	ToggleForceHCModePhysics(bool),
 	CopyLogToClipboard,
 }
 impl Sandbox for UserInterface {
@@ -153,6 +167,7 @@ impl Sandbox for UserInterface {
 			havok_gravity: String::from("-9.81"),
 			file_name: String::from(""),
 			file_recognized: false,
+			force_hc_mode_physics_on_normal: false,
 		}
 	}
 
@@ -167,12 +182,13 @@ impl Sandbox for UserInterface {
 					Ok(path) => {
 						self.path = format!("{}", path.display());
 						match get_information_from_file(&self.path){
-							Ok((g, p)) => {
+							Ok((g, fhc, p)) => {
 								let (normal_mode_gravity_modifier, havok_gravity) = g;
 								self.normal_mode_gravity_modifier = format_f32(normal_mode_gravity_modifier, 1);
 								self.havok_gravity = format_f32(havok_gravity, 2);
 								self.file_name = p.name.to_string();
 								self.file_recognized = true;
+								self.force_hc_mode_physics_on_normal = fhc;
 							},
 							Err(_) => {
 								self.file_name = String::from("");
@@ -200,7 +216,7 @@ impl Sandbox for UserInterface {
 						return;
 					}
 				};
-				match patch_file(&std::path::Path::new(&self.path), (normal_mode_gravity_modifier_float, havok_gravity_float)){
+				match patch_file(&std::path::Path::new(&self.path), (normal_mode_gravity_modifier_float, havok_gravity_float), self.force_hc_mode_physics_on_normal){
 					Ok(_) => {
 						self.log(format!( "successfully patched {}", self.path));
 					},
@@ -216,6 +232,9 @@ impl Sandbox for UserInterface {
 				self.normal_mode_gravity_modifier = g;
 			},
 			Message::Ignore => {();},
+			Message::ToggleForceHCModePhysics(t) => {
+				self.force_hc_mode_physics_on_normal = t;
+			},
 			Message::CopyLogToClipboard => {
 				println!("copying log to clipboard");
 				// this doesn't quite work
@@ -225,7 +244,7 @@ impl Sandbox for UserInterface {
 	}
 
 	fn view(&self) -> Element<Message>{
-		let mut gravities_are_float =
+		let gravities_are_float =
 			match self.normal_mode_gravity_modifier.parse::<f32>(){
 				Ok(_) => true,
 				Err(_) => false,
@@ -266,8 +285,10 @@ impl Sandbox for UserInterface {
 				row![
 					text("Gravity: "),
 					text_input("Floating point gravity value", &self.havok_gravity).on_input(|a|Message::ChangeGravity(a)),
-					text("Normal Mode Gravity Modifier: "),
+					text("Normal mode Gravity Modifier: "),
 					text_input("Floating point gravity modifier value", &self.normal_mode_gravity_modifier).on_input(|a|Message::ChangeNormalModeGravityModifier(a)),
+					text("Force HC physics on normal mode: "),
+					checkbox("", self.force_hc_mode_physics_on_normal, Message::ToggleForceHCModePhysics),
 					if gravities_are_float && self.file_recognized {
 						button("Patch").on_press(Message::Patch)
 					}else{
@@ -319,7 +340,7 @@ fn simple(){
 		Err(e) => panic!("{}", e),
 	};
 
-	match patch_file(&path, (0.2, -9.81)){
+	match patch_file(&path, (0.2, -9.81), false){
 		Ok(_) => {println!("success")},
 		Err(e) => panic!("{}", e),
 	};
