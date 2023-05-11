@@ -9,4 +9,5 @@
 
 - based on the findings of https://github.com/MeFisto94
 	- 008345e0 seems to be executed on vehicle spawn, vehicle physics is applied during that
+		- for traffic cars, param1 and param2 seem to be 0, param5 != 0 seems to indicate non-player
 	- 008348a1 is around where hc physics can be forced on/off
