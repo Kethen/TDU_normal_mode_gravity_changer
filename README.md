@@ -1,4 +1,9 @@
-Supports only 1.66A exe currently.
+### Supports only 1.66A exe currently.
+
+### Features
+- Adjust global gravity
+- Adjust normal mode additional gravity when a wheel is lifted off the ground
+- Force HC mode physics on player and racing bots in normal mode
 
 By default, when a wheel is lifted off the ground in normal (non hardcore) mode, an extra gravity modifier of 1.0 is added to the vehicle to quickly put the vehicle back onto the ground. The value is statically saved in the exe, and this patcher changes that value by changing an instruction.
 
