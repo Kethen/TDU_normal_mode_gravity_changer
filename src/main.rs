@@ -5,7 +5,7 @@ use std::io::Write;
 
 use iced::widget::{button, row, column, text, text_input, scrollable, checkbox};
 use iced::{Alignment, Element, Sandbox, Settings};
-use iced::clipboard;
+//use iced::clipboard;
 use iced::Length;
 
 use rfd::FileDialog;
@@ -239,7 +239,7 @@ impl Sandbox for UserInterface {
 			Message::CopyLogToClipboard => {
 				println!("copying log to clipboard");
 				// this doesn't quite work
-				clipboard::write::<Message>(self.log_display.to_string());
+				// clipboard::write::<Message>(self.log_display.to_string());
 			},
 		}
 	}
